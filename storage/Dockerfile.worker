@@ -1,0 +1,15 @@
+FROM python:3.13-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+COPY requirements-worker.txt .
+RUN pip install -r requirements-worker.txt
+
+COPY db.py models.py worker.py log_conf.yml ./
+
+# Exec form: python is PID 1 and receives SIGTERM from "docker compose stop".
+# worker.py installs a SIGTERM handler for a clean shutdown.
+CMD ["python", "worker.py"]

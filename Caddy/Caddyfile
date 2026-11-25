@@ -1,0 +1,51 @@
+# Everything except the receiver needs a login. Generate ADMIN_HASH with:
+#   docker run --rm caddy:2 caddy hash-password --plaintext 'your-password'
+(auth) {
+	basic_auth {
+		{$ADMIN_USER} {$ADMIN_HASH}
+	}
+}
+
+# DOMAIN comes from .env. With a real public domain pointing at this machine, Caddy gets and
+# renews a trusted Let's Encrypt certificate automatically. With "localhost" it uses a local one.
+{$DOMAIN:localhost} {
+	encode gzip
+
+	# The prefix is stripped before forwarding, so the services keep their normal routes
+	# (/combat/encounter, not /receiver/combat/encounter). --root-path makes Swagger UI work.
+	handle_path /receiver/* {
+		reverse_proxy receiver:8080
+	}
+
+	handle_path /storage/* {
+		import auth
+		reverse_proxy storage:8090
+	}
+
+	handle_path /processing/* {
+		import auth
+		reverse_proxy processing:8100
+	}
+
+	handle_path /anomaly/* {
+		import auth
+		reverse_proxy anomaly:8110
+	}
+
+	# Redpanda Console can delete topics: never expose it without a login
+	handle_path /redpanda/* {
+		import auth
+		reverse_proxy redpanda-console:8080 {
+			header_up X-Forwarded-Prefix /redpanda
+		}
+	}
+
+	# Grafana serves itself from /grafana (GF_SERVER_SERVE_FROM_SUB_PATH) and has its own login
+	handle /grafana/* {
+		reverse_proxy grafana:3000
+	}
+
+	handle {
+		respond "Not found" 404
+	}
+}

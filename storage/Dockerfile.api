@@ -1,0 +1,19 @@
+FROM python:3.13-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+# curl is only needed for the Compose healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements-api.txt .
+RUN pip install -r requirements-api.txt
+
+# db.py and models.py are shared with the worker; the API does not need worker.py
+COPY db.py models.py storage.py storage.yaml log_conf.yml ./
+
+EXPOSE 8090
+CMD ["uvicorn", "storage:app", "--host", "0.0.0.0", "--port", "8090"]

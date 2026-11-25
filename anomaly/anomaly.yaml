@@ -1,0 +1,114 @@
+openapi: 3.0.3
+info:
+  title: Realm Telemetry Anomaly Service
+  description: Detects anomalous events and publishes them to a dead letter queue (Kafka only, no other storage)
+  version: 1.0.0
+
+paths:
+  /status:
+    get:
+      summary: Health check
+      operationId: anomaly.get_status
+      responses:
+        '200':
+          description: service is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /anomalies:
+    get:
+      summary: Anomalies detected so far (read from the dead letter queue)
+      operationId: anomaly.get_anomalies
+      responses:
+        '200':
+          description: Count and list of anomalies
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [count, anomalies]
+                properties:
+                  count:
+                    type: integer
+                  anomalies:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '503':
+          description: Kafka unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /scan:
+    get:
+      summary: Live-scan the events topic with custom thresholds
+      operationId: anomaly.scan
+      parameters:
+        - in: query
+          name: type
+          required: true
+          schema:
+            type: string
+            enum: [combat_encounter, gold_transaction]
+        - in: query
+          name: below
+          required: false
+          schema:
+            type: number
+          description: Match events whose value is below this
+        - in: query
+          name: above
+          required: false
+          schema:
+            type: number
+          description: Match events whose value is above this
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            default: 1000
+            minimum: 1
+      responses:
+        '200':
+          description: Matching events
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [type, field, count, events]
+                properties:
+                  type:
+                    type: string
+                  field:
+                    type: string
+                  count:
+                    type: integer
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '503':
+          description: Kafka unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string

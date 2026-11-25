@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: 'redpanda'
+    static_configs:
+      - targets: ['redpanda:9644']
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Metrics about the machine running the stack (the cloud VM, in a cloud deployment)
+  - job_name: 'node-cloud'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # Hybrid deployment: Node Exporter running on your laptop, reachable over the VPN.
+  # Replace with your laptop's Tailscale/WireGuard IP, then uncomment.
+  # - job_name: 'node-laptop'
+  #   static_configs:
+  #     - targets: ['100.x.y.z:9100']

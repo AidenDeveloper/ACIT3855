@@ -1,0 +1,79 @@
+openapi: 3.0.3
+info:
+  title: Realm Telemetry Statistics
+  description: Serves statistics calculated from the events held by the storage service
+  version: 1.0.0
+
+paths:
+  /stats:
+    get:
+      summary: Get aggregate gameplay statistics
+      operationId: processing.get_stats
+      responses:
+        '200':
+          description: Aggregated statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessingStats'
+
+  /status:
+    get:
+      summary: Health check
+      operationId: processing.get_status
+      responses:
+        '200':
+          description: service is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+components:
+  schemas:
+    ProcessingStats:
+      type: object
+      required:
+        - num_combat_events
+        - max_damage_dealt
+        - avg_damage_dealt
+        - num_economy_events
+        - max_gold_amount
+        - min_gold_amount
+        - avg_gold_amount
+        - last_updated
+      properties:
+        num_combat_events:
+          type: integer
+          example: 1000
+        max_damage_dealt:
+          type: integer
+          nullable: true
+          example: 4987
+        avg_damage_dealt:
+          type: number
+          nullable: true
+          example: 2511.37
+        num_economy_events:
+          type: integer
+          example: 1000
+        max_gold_amount:
+          type: integer
+          nullable: true
+          example: 9998
+        min_gold_amount:
+          type: integer
+          nullable: true
+          example: 2
+        avg_gold_amount:
+          type: number
+          nullable: true
+          example: 5034.8
+        last_updated:
+          type: string
+          nullable: true
+          example: "2026-10-08T08:45:12+00:00"

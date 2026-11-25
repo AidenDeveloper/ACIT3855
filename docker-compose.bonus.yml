@@ -1,0 +1,89 @@
+# Bonus features. Start with:
+#   docker compose -f docker-compose.yml -f docker-compose.bonus.yml up -d --build
+# Adds: anomaly service, Node Exporter, Caddy reverse proxy (HTTPS). Needs Docker Compose >= 2.24.4
+# (for "!reset"). Once the proxy is on, ONLY Caddy publishes ports (80/443).
+services:
+  anomaly:
+    build:
+      context: anomaly
+    restart: unless-stopped
+    environment:
+      KAFKA_BROKER: redpanda:9092
+      KAFKA_TOPIC: events
+      DLQ_TOPIC: anomalies
+      COMBAT_DAMAGE_ABOVE: "4500"
+      GOLD_ABOVE: "9500"
+      GOLD_BELOW: "10"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8110/status"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+    command: ["uvicorn", "anomaly:app", "--host", "0.0.0.0", "--port", "8110", "--root-path", "/anomaly", "--proxy-headers", "--forwarded-allow-ips", "*"]
+
+  # --- run the same services behind the proxy prefix, and stop publishing their ports
+  receiver:
+    command: ["uvicorn", "receiver:app", "--host", "0.0.0.0", "--port", "8080", "--root-path", "/receiver", "--proxy-headers", "--forwarded-allow-ips", "*"]
+    ports: !reset []
+
+  storage:
+    command: ["uvicorn", "storage:app", "--host", "0.0.0.0", "--port", "8090", "--root-path", "/storage", "--proxy-headers", "--forwarded-allow-ips", "*"]
+
+  processing:
+    command: ["uvicorn", "processing:app", "--host", "0.0.0.0", "--port", "8100", "--root-path", "/processing", "--proxy-headers", "--forwarded-allow-ips", "*"]
+    ports: !reset []
+
+  redpanda-console:
+    ports: !reset []
+
+  prometheus:
+    ports: !reset []
+    volumes:
+      - ./prometheus/prometheus.bonus.yml:/etc/prometheus/prometheus.yml:ro
+
+  alloy:
+    ports: !reset []
+
+  grafana:
+    ports: !reset []
+    environment:
+      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    restart: unless-stopped
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    command: ["--path.rootfs=/host"]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_HASH: ${ADMIN_HASH}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - receiver
+      - storage
+      - processing
+      - anomaly
+      - redpanda-console
+      - grafana
+
+volumes:
+  caddy-data:
+  caddy-config:

@@ -1,0 +1,208 @@
+services:
+  # ------------------------------------------------------------------ data stores
+  db:
+    image: mysql:8
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_change_me
+      MYSQL_DATABASE: realm_events
+      MYSQL_USER: realm_user
+      MYSQL_PASSWORD: change_me_please
+      TZ: America/Vancouver
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      # 127.0.0.1 (TCP), not localhost: the temporary init server only listens on a socket
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$$MYSQL_USER -p$$MYSQL_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v26.1.10
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      # Address the broker advertises to clients. "internal" is for containers on this Docker
+      # network, "external" for clients on your laptop.
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      # RPC API: brokers talk to each other (only one broker here)
+      - --rpc-addr redpanda:33145
+      - --advertise-rpc-addr redpanda:33145
+      # dev-container: well-known development settings
+      - --mode dev-container
+      # use 1 CPU core
+      - --smp 1
+      - --default-log-level=info
+      - --set redpanda.auto_create_topics_enabled=true
+    volumes:
+      - redpanda:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:v3.7.4
+    restart: unless-stopped
+    entrypoint: /bin/sh
+    command: -c 'echo "$$CONSOLE_CONFIG_FILE" > /tmp/config.yml; /app/console'
+    environment:
+      CONFIG_FILEPATH: /tmp/config.yml
+      CONSOLE_CONFIG_FILE: |
+        kafka:
+          brokers: ["redpanda:9092"]
+          schemaRegistry:
+            enabled: true
+            urls: ["http://redpanda:8081"]
+        redpanda:
+          adminApi:
+            enabled: true
+            urls: ["http://redpanda:9644"]
+    ports:
+      - "8085:8080"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
+  # ------------------------------------------------------------------ application
+  receiver:
+    build:
+      context: receiver
+    restart: unless-stopped
+    environment:
+      KAFKA_BROKER: redpanda:9092
+      KAFKA_TOPIC: events
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/status"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+    ports:
+      - "8080:8080"
+
+  storage-worker:
+    build:
+      context: storage
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: mysql+pymysql://realm_user:change_me_please@db:3306/realm_events
+      KAFKA_BROKER: redpanda:9092
+      KAFKA_TOPIC: events
+      KAFKA_GROUP_ID: storage_worker_group
+    depends_on:
+      db:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    healthcheck:
+      # the worker touches /tmp/heartbeat every loop; unhealthy if it is older than 1 minute
+      test: ["CMD-SHELL", "find /tmp/heartbeat -mmin -1 | grep -q ."]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 40s
+
+  storage:
+    build:
+      context: storage
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: mysql+pymysql://realm_user:change_me_please@db:3306/realm_events
+      SETTLE_SECONDS: "1"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/status"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
+  processing:
+    build:
+      context: processing
+    restart: unless-stopped
+    environment:
+      STORAGE_URL: http://storage:8090
+      STATS_PATH: /data/statistics.json
+      POLL_INTERVAL_SECONDS: "5"
+    depends_on:
+      storage:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/status"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - processing-data:/data
+    ports:
+      - "8100:8100"
+
+  # ------------------------------------------------------------------ observability (Lab 11)
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
+  loki:
+    image: grafana/loki:latest
+    restart: unless-stopped
+    volumes:
+      - loki-data:/loki
+
+  alloy:
+    image: grafana/alloy:latest
+    restart: unless-stopped
+    ports:
+      - "12345:12345"
+    volumes:
+      - ./prometheus/config.alloy:/etc/alloy/config.alloy
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:13.1.3
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_INSTALL_PLUGINS=yesoreyeram-infinity-datasource
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-password}
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./grafana/provisioning/datasources/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    depends_on:
+      - prometheus
+      - loki
+
+volumes:
+  mysql-data:
+  processing-data:
+  redpanda:
+  loki-data:
+  grafana-storage:

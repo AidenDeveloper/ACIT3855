@@ -1,0 +1,124 @@
+openapi: 3.0.3
+info:
+  title: Realm Telemetry Receiver
+  description: Receives gameplay events from MMORPG game servers
+  version: 1.0.0
+
+paths:
+  /combat/encounter:
+    post:
+      summary: Reports a combat encounter between a player and a monster
+      operationId: receiver.report_combat_encounter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CombatEncounter'
+      responses:
+        '201':
+          description: combat encounter successfully received
+        '400':
+          description: invalid input, object invalid
+        '503':
+          description: Kafka unavailable, event not accepted (degraded mode)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /economy/transaction:
+    post:
+      summary: Reports a gold transaction for a player
+      operationId: receiver.report_gold_transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoldTransaction'
+      responses:
+        '201':
+          description: gold transaction successfully received
+        '400':
+          description: invalid input, object invalid
+        '503':
+          description: Kafka unavailable, event not accepted (degraded mode)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /status:
+    get:
+      summary: Health check
+      operationId: receiver.get_status
+      responses:
+        '200':
+          description: service is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  kafka:
+                    type: string
+                    example: ok
+
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: temporarily unavailable
+
+    CombatEncounter:
+      type: object
+      required: [player_id, character_name, monster_type, damage_dealt, timestamp]
+      properties:
+        player_id:
+          type: string
+          format: uuid
+          example: "d290f1ee-6c54-4b01-90e6-d701748f0851"
+        character_name:
+          type: string
+          example: "Thalindra the Bold"
+        monster_type:
+          type: string
+          example: "Frost Wyrm"
+        damage_dealt:
+          type: integer
+          minimum: 0
+          example: 1840
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-09-07T20:12:33.001Z"
+
+    GoldTransaction:
+      type: object
+      required: [player_id, character_name, transaction_type, gold_amount, timestamp]
+      properties:
+        player_id:
+          type: string
+          format: uuid
+          example: "d290f1ee-6c54-4b01-90e6-d701748f0851"
+        character_name:
+          type: string
+          example: "Thalindra the Bold"
+        transaction_type:
+          type: string
+          enum: [loot, vendor_sale, trade, quest_reward]
+          example: "quest_reward"
+        gold_amount:
+          type: integer
+          example: 250
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-09-07T20:14:02.517Z"

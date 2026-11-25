@@ -1,0 +1,174 @@
+openapi: 3.0.3
+info:
+  title: Realm Telemetry Storage API
+  description: Read-only access to stored gameplay events (writing is done by the storage worker via Kafka)
+  version: 2.0.0
+
+paths:
+  /combat/encounter:
+    get:
+      summary: Gets combat encounters recorded after a timestamp
+      operationId: storage.get_combat_encounters
+      parameters:
+        - in: query
+          name: after
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Return only events recorded after this UTC timestamp
+          example: "2026-10-08T08:00:00.000000Z"
+      responses:
+        '200':
+          description: A list of combat encounters
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CombatEncounterRecord'
+        '503':
+          description: Database unavailable (degraded mode)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /economy/transaction:
+    get:
+      summary: Gets gold transactions recorded after a timestamp
+      operationId: storage.get_gold_transactions
+      parameters:
+        - in: query
+          name: after
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Return only events recorded after this UTC timestamp
+          example: "2026-10-08T08:00:00.000000Z"
+      responses:
+        '200':
+          description: A list of gold transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GoldTransactionRecord'
+        '503':
+          description: Database unavailable (degraded mode)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /status:
+    get:
+      summary: Service health and record counts
+      operationId: storage.get_status
+      responses:
+        '200':
+          description: service is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  combat_count:
+                    type: integer
+                  economy_count:
+                    type: integer
+        '503':
+          description: Database unavailable (degraded mode)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /reset:
+    post:
+      summary: Drops and recreates all tables (purges the database)
+      operationId: storage.reset_db
+      responses:
+        '200':
+          description: database reset
+        '503':
+          description: Database unavailable (degraded mode)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: database unavailable
+
+    CombatEncounterRecord:
+      type: object
+      required: [player_id, character_name, monster_type, damage_dealt, timestamp, trace_id, recorded_timestamp]
+      properties:
+        player_id:
+          type: string
+          format: uuid
+          example: "d290f1ee-6c54-4b01-90e6-d701748f0851"
+        character_name:
+          type: string
+          example: "Thalindra the Bold"
+        monster_type:
+          type: string
+          example: "Frost Wyrm"
+        damage_dealt:
+          type: integer
+          example: 1840
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-09-07T20:12:33.001Z"
+        trace_id:
+          type: integer
+          format: int64
+          example: 1790000000123456789
+        recorded_timestamp:
+          type: string
+          format: date-time
+          example: "2026-10-08T08:39:28.461000Z"
+
+    GoldTransactionRecord:
+      type: object
+      required: [player_id, character_name, transaction_type, gold_amount, timestamp, trace_id, recorded_timestamp]
+      properties:
+        player_id:
+          type: string
+          format: uuid
+          example: "d290f1ee-6c54-4b01-90e6-d701748f0851"
+        character_name:
+          type: string
+          example: "Thalindra the Bold"
+        transaction_type:
+          type: string
+          enum: [loot, vendor_sale, trade, quest_reward]
+          example: "quest_reward"
+        gold_amount:
+          type: integer
+          example: 250
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-09-07T20:14:02.517Z"
+        trace_id:
+          type: integer
+          format: int64
+          example: 1790000000123456789
+        recorded_timestamp:
+          type: string
+          format: date-time
+          example: "2026-10-08T08:39:28.461000Z"
