@@ -1,0 +1,45 @@
+# Hybrid version: the services live on the laptop ("laptop" = its Tailscale IP, set by extra_hosts)
+(auth) {
+	basic_auth {
+		{$ADMIN_USER} {$ADMIN_HASH}
+	}
+}
+
+{$DOMAIN:localhost} {
+	encode gzip
+
+	handle_path /receiver/* {
+		reverse_proxy laptop:8080
+	}
+
+	handle_path /storage/* {
+		import auth
+		reverse_proxy laptop:8090
+	}
+
+	handle_path /processing/* {
+		import auth
+		reverse_proxy laptop:8100
+	}
+
+	handle_path /anomaly/* {
+		import auth
+		reverse_proxy laptop:8110
+	}
+
+	handle_path /redpanda/* {
+		import auth
+		reverse_proxy laptop:8085 {
+			header_up X-Forwarded-Prefix /redpanda
+		}
+	}
+
+	# Grafana runs on this VM and serves itself from /grafana
+	handle /grafana/* {
+		reverse_proxy grafana:3000
+	}
+
+	handle {
+		respond "Not found" 404
+	}
+}

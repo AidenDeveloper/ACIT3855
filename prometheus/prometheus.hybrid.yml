@@ -1,0 +1,21 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # --- on this VM
+  - job_name: 'node-server'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # --- on the laptop, over Tailscale ("laptop" is defined by extra_hosts)
+  - job_name: 'redpanda'
+    static_configs:
+      - targets: ['laptop:9644']
+
+  - job_name: 'node-laptop'
+    static_configs:
+      - targets: ['laptop:9182']   # windows_exporter
